@@ -589,10 +589,11 @@ static void LZ4HC_setExternalDict(LZ4HC_Data_Structure* ctxPtr, const BYTE* newB
     ctxPtr->nextToUpdate = ctxPtr->dictLimit;   /* match referencing will resume from there */
 }
 
-static int LZ4_compressHC_continue_generic (LZ4HC_Data_Structure* ctxPtr,
+static int LZ4_compressHC_continue_generic (LZ4_streamHC_t* LZ4_streamHCPtr,
                                             const char* source, char* dest,
                                             int inputSize, int maxOutputSize, limitedOutput_directive limit)
 {
+    LZ4HC_Data_Structure* ctxPtr = (LZ4HC_Data_Structure*)LZ4_streamHCPtr;
     /* auto-init if forgotten */
     if (ctxPtr->base == NULL) LZ4HC_init (ctxPtr, (const BYTE*) source);
 
@@ -600,7 +601,7 @@ static int LZ4_compressHC_continue_generic (LZ4HC_Data_Structure* ctxPtr,
     if ((size_t)(ctxPtr->end - ctxPtr->base) > 2 GB) {
         size_t dictSize = (size_t)(ctxPtr->end - ctxPtr->base) - ctxPtr->dictLimit;
         if (dictSize > 64 KB) dictSize = 64 KB;
-        LZ4_loadDictHC((LZ4_streamHC_t*)ctxPtr, (const char*)(ctxPtr->end) - dictSize, (int)dictSize);
+        LZ4_loadDictHC(LZ4_streamHCPtr, (const char*)(ctxPtr->end) - dictSize, (int)dictSize);
     }
 
     /* Check if blocks follow each other */
@@ -623,9 +624,9 @@ static int LZ4_compressHC_continue_generic (LZ4HC_Data_Structure* ctxPtr,
 int LZ4_compress_HC_continue (LZ4_streamHC_t* LZ4_streamHCPtr, const char* source, char* dest, int inputSize, int maxOutputSize)
 {
     if (maxOutputSize < LZ4_compressBound(inputSize))
-        return LZ4_compressHC_continue_generic ((LZ4HC_Data_Structure*)LZ4_streamHCPtr, source, dest, inputSize, maxOutputSize, limitedOutput);
+        return LZ4_compressHC_continue_generic (LZ4_streamHCPtr, source, dest, inputSize, maxOutputSize, limitedOutput);
     else
-        return LZ4_compressHC_continue_generic ((LZ4HC_Data_Structure*)LZ4_streamHCPtr, source, dest, inputSize, maxOutputSize, noLimit);
+        return LZ4_compressHC_continue_generic (LZ4_streamHCPtr, source, dest, inputSize, maxOutputSize, noLimit);
 }
 
 

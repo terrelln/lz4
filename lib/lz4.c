@@ -1054,7 +1054,7 @@ int LZ4_compress_forceExtDict (LZ4_stream_t* LZ4_dict, const char* source, char*
 
     const BYTE* smallest = dictEnd;
     if (smallest > (const BYTE*) source) smallest = (const BYTE*) source;
-    LZ4_renormDictT((LZ4_stream_t_internal*)LZ4_dict, smallest);
+    LZ4_renormDictT(streamPtr, smallest);
 
     result = LZ4_compress_generic(LZ4_dict, source, dest, inputSize, 0, notLimited, byU32, usingExtDict, noDictIssue, 1);
 
