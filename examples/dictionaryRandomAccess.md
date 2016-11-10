@@ -42,11 +42,14 @@ This allows each block to be independent, but maintains compression ratio.
 ```
 
 After writing the magic bytes `TEST` and then the compressed blocks, write out the jump table.
-The last 4 bytes is an integer containing the number of blocks in the stream.
-If there are `N` blocks, then just before the last 4 bytes is `N + 1` 4 byte integers containing the offsets at the beginning and end of each block.
+The last 4 bytes is an integer containing the number of blocks in the stream plus one, which is called `N + 1`.
+Just before the last 4 bytes is `N + 1` 4 byte integers containing the offsets at the beginning and end of each block.
 Let `Offset#K` be the total number of bytes written after writing out `Block#K` *including* the magic bytes for simplicity.
+Each block contains exactly `BLOCK_BYTES` of uncompressed data, except the last which may contain less.
+This allows us to easily translate an offset in the uncompressed data to a block.
 
 ```
+ Magic  Blocks                    Offsets                         # of Offsets
 +------+---------+     +---------+---+----------+     +----------+-----+
 | TEST | Block#1 | ... | Block#N | 4 | Offset#1 | ... | Offset#N | N+1 |
 +------+---------+     +---------+---+----------+     +----------+-----+
