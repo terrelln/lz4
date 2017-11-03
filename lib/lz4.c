@@ -512,24 +512,32 @@ LZ4_FORCE_INLINE int LZ4_compress_generic(
                  const dictIssue_directive dictIssue,
                  const U32 acceleration)
 {
-    const BYTE* ip = (const BYTE*) source;
     const BYTE* base;
-    const BYTE* lowLimit;
-    const BYTE* lowLimit2;
-    const BYTE* const lowRefLimit = ip - cctx->dictSize;
+    const BYTE* const lowRefLimit = (const BYTE*)source - cctx->dictSize;
     const BYTE* const dictionary = cctx->dictionary;
     const BYTE* const dictEnd = dictionary + cctx->dictSize;
     const ptrdiff_t dictDelta = dictEnd - (const BYTE*)source;
     const BYTE* anchor = (const BYTE*) source;
-    const BYTE* const iend = ip + inputSize;
+    const BYTE* const iend = (const BYTE*)source + inputSize;
     const BYTE* const mflimit = iend - MFLIMIT;
     const BYTE* const matchlimit = iend - LASTLITERALS;
 
     BYTE* op = (BYTE*) dest;
     BYTE* const olimit = op + maxOutputSize;
 
-    U32 forwardH;
-    U32 forwardH2;
+    #define N 2
+    const BYTE* ips[N];
+    const BYTE* lowLimits[N];
+    U32 forwardHs[N];
+    int i;
+    int m;
+    /* Defines the found match */
+    BYTE const* match;
+    BYTE const* ip;
+    BYTE const* lowLimit;
+    ptrdiff_t refDelta;
+
+    #define foreach(i) for (i = 0; i < N; ++i)
 
     /* Init conditions */
     if ((U32)inputSize > (U32)LZ4_MAX_INPUT_SIZE) return 0;   /* Unsupported inputSize, too large (or negative) */
@@ -538,98 +546,89 @@ LZ4_FORCE_INLINE int LZ4_compress_generic(
     case noDict:
     default:
         base = (const BYTE*)source;
-        lowLimit = lowLimit2 = (const BYTE*)source;
+        foreach(i)
+          lowLimits[i] = (const BYTE*)source;
         break;
     case withPrefix64k:
         base = (const BYTE*)source - cctx->currentOffset;
-        lowLimit = lowLimit2 = (const BYTE*)source - cctx->dictSize;
+        foreach(i)
+          lowLimits[i] = (const BYTE*)source - cctx->dictSize;
         break;
     case usingExtDict:
         base = (const BYTE*)source - cctx->currentOffset;
-        lowLimit = lowLimit2 = (const BYTE*)source;
+        foreach(i)
+          lowLimits[i] = (const BYTE*)source;
         break;
     }
     if ((tableType == byU16) && (inputSize>=LZ4_64Klimit)) return 0;   /* Size too large (not within 64K limit) */
-    if (inputSize<LZ4_minLength) goto _last_literals;                  /* Input too small, no compression (all literals) */
+    if (inputSize<LZ4_minLength + N - 1) goto _last_literals;                  /* Input too small, no compression (all literals) */
 
     /* First Byte */
-    LZ4_putPosition(ip, cctx->hashTable, tableType, base);
-    ip++; forwardH = LZ4_hashPosition(ip, tableType);
-    forwardH2 = LZ4_hashPosition(ip + 1, tableType);
+    LZ4_putPosition((const BYTE*)source, cctx->hashTable, tableType, base);
+    foreach(i) {
+      ips[i] = (const BYTE*)source + i + 1;
+      forwardHs[i] = LZ4_hashPosition(ips[i], tableType);
+    }
 
     /* Main Loop */
     for ( ; ; ) {
-        ptrdiff_t refDelta = 0;
-        ptrdiff_t refDelta2 = 0;
-        const BYTE* match;
-        const BYTE* match2;
+        ptrdiff_t refDeltas[N] = { };
+        const BYTE* matches[N];
         BYTE* token;
 
         /* Find a match */
-        {   const BYTE* forwardIp = ip;
-            const BYTE* forwardIp2 = ip + 1;
+        {   const BYTE* forwardIps[N];
             unsigned step = 1;
             unsigned searchMatchNb = acceleration << LZ4_skipTrigger;
+            memcpy(forwardIps, ips, sizeof(ips));
             for ( ; ; ) {
-                U32 const h = forwardH;
-                U32 const h2 = forwardH2;
-                const BYTE* const ip2 = forwardIp2;
-                ip = forwardIp;
-                forwardIp = forwardIp2 + step;
-                forwardIp2 = forwardIp + step;
+                U32 hs[N];
+                memcpy(hs, forwardHs, sizeof(forwardHs));
+                memcpy(ips, forwardIps, sizeof(ips));
+                foreach(i)
+                  forwardIps[i] = forwardIps[(i + N - 1) % N] + step;
                 step = (searchMatchNb >> LZ4_skipTrigger);
                 searchMatchNb += 2;
 
-                if (unlikely(forwardIp2 > mflimit)) goto _last_literals;
+                if (unlikely(forwardIps[N-1] > mflimit)) goto _last_literals;
 
-                match = LZ4_getPositionOnHash(h, cctx->hashTable, tableType, base);
-                match2 = LZ4_getPositionOnHash(h2, cctx->hashTable, tableType, base);
+                foreach(i)
+                  matches[i] = LZ4_getPositionOnHash(hs[i], cctx->hashTable, tableType, base);
                 if (dict==usingExtDict) {
-                    if (match < (const BYTE*)source) {
-                        refDelta = dictDelta;
-                        lowLimit = dictionary;
-                    } else {
-                        refDelta = 0;
-                        lowLimit = (const BYTE*)source;
-                    }
-                    if (match2 < (const BYTE*)source) {
-                        refDelta2 = dictDelta;
-                        lowLimit2 = dictionary;
-                    } else {
-                        refDelta2 = 0;
-                        lowLimit2 = (const BYTE*)source;
+                    foreach(i) {
+                      if (matches[i] < (const BYTE*)source) {
+                          refDeltas[i] = dictDelta;
+                          lowLimits[i] = dictionary;
+                      } else {
+                          refDeltas[i] = 0;
+                          lowLimits[i] = (const BYTE*)source;
+                      }
                     }
                 }
-                forwardH = LZ4_hashPosition(forwardIp, tableType);
-                forwardH2 = LZ4_hashPosition(forwardIp2, tableType);
+                foreach(i)
+                  forwardHs[i] = LZ4_hashPosition(forwardIps[i], tableType);
 
 #define match_bad(mMatch, mRefDelta, mIp) \
   ( ((dictIssue==dictSmall) ? ((mMatch) < lowRefLimit) : 0) \
  || ((tableType==byU16) ? 0 : ((mMatch) + MAX_DISTANCE < (mIp))) \
  || ((LZ4_read32((mMatch)+(mRefDelta)) != LZ4_read32((mIp)))))
 
-                LZ4_putPositionOnHash(ip, h, cctx->hashTable, tableType, base);
-                if (!match_bad(match, refDelta, ip))
-                  break;
-                LZ4_putPositionOnHash(ip2, h2, cctx->hashTable, tableType, base);
-                if (!match_bad(match2, refDelta2, ip2)) {
-                  match = match2;
-                  refDelta = refDelta2;
-                  lowLimit = lowLimit2;
-                  ip = ip2;
-                  break;
+                m = N;
+                foreach(i) {
+                  LZ4_putPositionOnHash(ips[i], hs[i], cctx->hashTable, tableType, base);
+                  if (!match_bad(matches[i], refDeltas[i], ips[i])) {
+                    m = i;
+                    break;
+                  }
                 }
-#if 0 /* Check the most recent position */
-                if (!match_bad(ip, 0, ip2)) {
-                  match = ip;
-                  refDelta = 0;
-                  lowLimit = (const BYTE*)source;
-                  ip = ip2;
+                if (m != N)
                   break;
-                }
-#endif
             }
         }
+        match = matches[m];
+        ip = ips[m];
+        lowLimit = lowLimits[m];
+        refDelta = refDeltas[m];
 
         /* Catch up */
         while (((ip>anchor) & (match+refDelta > lowLimit)) && (unlikely(ip[-1]==match[refDelta-1]))) { ip--; match--; }
@@ -695,16 +694,18 @@ LZ4_FORCE_INLINE int LZ4_compress_generic(
         }
 
         anchor = ip;
+        foreach(i)
+          ips[i] = anchor + i;
 
         /* Test end of chunk */
-        if (ip + 1 > mflimit) break;
+        if (ips[N-1] > mflimit) break;
 
         /* Fill table */
-        LZ4_putPosition(ip-2, cctx->hashTable, tableType, base);
+        LZ4_putPosition(anchor-2, cctx->hashTable, tableType, base);
 
         /* Prepare next loop */
-        forwardH = LZ4_hashPosition(ip, tableType);
-        forwardH2 = LZ4_hashPosition(ip + 1, tableType);
+        foreach(i)
+          forwardHs[i] = LZ4_hashPosition(ips[i], tableType);
     }
 
 _last_literals:
