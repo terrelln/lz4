@@ -392,7 +392,7 @@ static unsigned LZ4_NbCommonBytes (register reg_t val)
 }
 
 #define STEPSIZE sizeof(reg_t)
-static unsigned LZ4_count(const BYTE* pIn, const BYTE* pMatch, const BYTE* pInLimit)
+static unsigned LZ4_count2(const BYTE* pIn, const BYTE* pMatch, const BYTE* pInLimit)
 {
     const BYTE* const pStart = pIn;
 
@@ -407,6 +407,33 @@ static unsigned LZ4_count(const BYTE* pIn, const BYTE* pMatch, const BYTE* pInLi
     if ((pIn<(pInLimit-1)) && (LZ4_read16(pMatch) == LZ4_read16(pIn))) { pIn+=2; pMatch+=2; }
     if ((pIn<pInLimit) && (*pMatch == *pIn)) pIn++;
     return (unsigned)(pIn - pStart);
+}
+#include "emmintrin.h"
+#include "smmintrin.h"
+#include "xmmintrin.h"
+static unsigned LZ4_count(const BYTE* const l_begin, const BYTE* rhs, const BYTE* l_end)
+{
+    const BYTE* lhs = l_begin;
+    int const kStep = 16;
+    while (likely(lhs < l_end-(kStep-1))) {
+        __m128i const lval = _mm_loadu_si128((__m128i const *)lhs);
+        __m128i const rval = _mm_loadu_si128((__m128i const *)rhs);
+        __m128i const comp = _mm_cmpeq_epi8(lval, rval);
+        int const mask = _mm_movemask_epi8(comp);
+        if (mask == 0xFFFF) {
+            lhs += kStep;
+            rhs += kStep;
+            continue;
+        }
+        lhs += __builtin_ctz(~mask);
+        return (unsigned)(lhs - l_begin);
+    }
+
+    if ((kStep==16) && (lhs<(l_end-3)) && (LZ4_read32(rhs) == LZ4_read32(lhs))) { lhs+=4; rhs+=4; }
+    if ((kStep==8) && (lhs<(l_end-3)) && (LZ4_read32(rhs) == LZ4_read32(lhs))) { lhs+=4; rhs+=4; }
+    if ((lhs<(l_end-1)) && (LZ4_read16(rhs) == LZ4_read16(lhs))) { lhs+=2; rhs+=2; }
+    if ((lhs<l_end) && (*rhs == *lhs)) lhs++;
+    return (unsigned)(lhs - l_begin);
 }
 
 
