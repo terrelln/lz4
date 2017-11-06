@@ -420,11 +420,12 @@ static unsigned LZ4_count16(const BYTE* const l_begin, const BYTE* rhs, const BY
         __m128i const rval = _mm_loadu_si128((__m128i const *)rhs);
         __m128i const comp = _mm_cmpeq_epi8(lval, rval);
         int const mask = _mm_movemask_epi8(comp);
-        lhs += __builtin_ctz(~mask);
-        if (unlikely(mask == 0xFFFF)) {
+        if (mask == 0xFFFF) {
+            lhs += kStep;
             rhs += kStep;
             continue;
         }
+        lhs += __builtin_ctz(~mask);
         return (unsigned)(lhs - l_begin);
     }
 
@@ -445,7 +446,7 @@ static unsigned LZ4_count16(const BYTE* const l_begin, const BYTE* rhs, const BY
 //         __m256i const rval = _mm256_loadu_si256((__m256i const *)rhs);
 //         __m256i const comp = _mm256_cmpeq_epi8(lval, rval);
 //         U32 const mask = _mm256_movemask_epi8(comp);
-//         if (unlikely(mask == ~(U32)0)) {
+//         if (mask == ~(U32)0) {
 //             // ++a;
 //             lhs += kStep;
 //             rhs += kStep;
