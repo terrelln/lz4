@@ -413,7 +413,38 @@ static unsigned LZ4_count(const BYTE* pIn, const BYTE* pMatch, const BYTE* pInLi
             pIn+=STEPSIZE; pMatch+=STEPSIZE;
         } else {
             return LZ4_NbCommonBytes(diff);
-    }   }
+        }
+    }
+
+    while (likely(pIn < pInLimit-(STEPSIZE-1))) {
+        reg_t const diff = LZ4_read_ARCH(pMatch) ^ LZ4_read_ARCH(pIn);
+        if (!diff) { pIn+=STEPSIZE; pMatch+=STEPSIZE; continue; }
+        pIn += LZ4_NbCommonBytes(diff);
+        return (unsigned)(pIn - pStart);
+    }
+
+    if ((STEPSIZE==8) && (pIn<(pInLimit-3)) && (LZ4_read32(pMatch) == LZ4_read32(pIn))) { pIn+=4; pMatch+=4; }
+    if ((pIn<(pInLimit-1)) && (LZ4_read16(pMatch) == LZ4_read16(pIn))) { pIn+=2; pMatch+=2; }
+    if ((pIn<pInLimit) && (*pMatch == *pIn)) pIn++;
+    return (unsigned)(pIn - pStart);
+}
+
+/* Will always read 8 bytes past pIn, even if pIn + 8 >= pInLimit.
+ * Will return matches up to 8 even if pInLimit - pIn < 8.
+ */
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+LZ4_FORCE_INLINE unsigned LZ4_wildCount(const BYTE* pIn, const BYTE* pMatch, const BYTE* pInLimit)
+{
+    const BYTE* const pStart = pIn;
+    {
+        U32 const max = pInLimit - pIn;
+        reg_t const diff = LZ4_read_ARCH(pMatch) ^ LZ4_read_ARCH(pIn);
+        if (!diff) {
+            pIn+=STEPSIZE; pMatch+=STEPSIZE;
+        } else {
+            return MIN(LZ4_NbCommonBytes(diff), max);
+        }
+    }
 
     while (likely(pIn < pInLimit-(STEPSIZE-1))) {
         reg_t const diff = LZ4_read_ARCH(pMatch) ^ LZ4_read_ARCH(pIn);
@@ -650,7 +681,7 @@ _next_match:
                     ip += more;
                 }
             } else {
-                matchCode = LZ4_count(ip+MINMATCH, match+MINMATCH, matchlimit);
+                matchCode = LZ4_wildCount(ip+MINMATCH, match+MINMATCH, matchlimit);
                 ip += MINMATCH + matchCode;
             }
 
