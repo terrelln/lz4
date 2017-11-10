@@ -220,7 +220,7 @@ static int BMK_benchMem(const void* srcBuffer, size_t srcSize,
         UTIL_time_t coolTime;
         U64 const maxTime = (g_nbSeconds * TIMELOOP_MICROSEC) + 100;
         U64 totalCTime=0, totalDTime=0;
-        U32 cCompleted=0, dCompleted=0;
+        U32 cCompleted=0, dCompleted=1;
 #       define NB_MARKS 4
         const char* const marks[NB_MARKS] = { " |", " /", " =",  "\\" };
         U32 markNb = 0;
