@@ -611,11 +611,15 @@ LZ4_FORCE_INLINE int LZ4_compress_generic(
                         lowLimit = (const BYTE*)source;
                 }   }
                 forwardH = LZ4_hashPosition(forwardIp, tableType);
+#define match_bad(mMatch, mRefDelta, mIp) \
+  ((unlikely((dictIssue==dictSmall) ? ((mMatch) < lowRefLimit) : 0) \
+ |  unlikely((tableType==byU16) ? 0 : ((mMatch) + MAX_DISTANCE < (mIp)))) \
+ || ((LZ4_read32((mMatch)+(mRefDelta)) != LZ4_read32((mIp)))))
+                int const good = !match_bad(match, refDelta, ip);
                 LZ4_putPositionOnHash(ip, h, cctx->hashTable, tableType, base);
 
-            } while ( ((dictIssue==dictSmall) ? (match < lowRefLimit) : 0)
-                || ((tableType==byU16) ? 0 : (match + MAX_DISTANCE < ip))
-                || (LZ4_read32(match+refDelta) != LZ4_read32(ip)) );
+                if (good) break;
+            } while (1);
         }
 
         /* Catch up */
