@@ -491,10 +491,23 @@ static U32 LZ4_hash5(U64 sequence, tableType_t const tableType)
         return (U32)(((sequence >> 24) * prime8bytes) >> (64 - hashLog));
 }
 
+LZ4_FORCE_INLINE size_t LZ4_read(const void* const p, tableType_t const tableType)
+{
+    if ((sizeof(reg_t)==8) && (tableType != byU16)) return LZ4_read_ARCH(p);
+    return LZ4_read32(p);
+}
+
+LZ4_FORCE_INLINE U32 LZ4_hash(size_t v, tableType_t const tableType)
+{
+    if ((sizeof(reg_t)==8) && (tableType != byU16)) return LZ4_hash5(v, tableType);
+    return LZ4_hash4(v, tableType);
+}
+
 LZ4_FORCE_INLINE U32 LZ4_hashPosition(const void* const p, tableType_t const tableType)
 {
-    if ((sizeof(reg_t)==8) && (tableType != byU16)) return LZ4_hash5(LZ4_read_ARCH(p), tableType);
-    return LZ4_hash4(LZ4_read32(p), tableType);
+    return LZ4_hash(LZ4_read(p, tableType), tableType);
+    // if ((sizeof(reg_t)==8) && (tableType != byU16)) return LZ4_hash5(LZ4_read_ARCH(p), tableType);
+    // return LZ4_hash4(LZ4_read32(p), tableType);
 }
 
 static void LZ4_putPositionOnHash(const BYTE* p, U32 h, void* tableBase, tableType_t const tableType, const BYTE* srcBase)
@@ -597,6 +610,8 @@ LZ4_FORCE_INLINE int LZ4_compress_generic(
         /* Find a match */
         {   const BYTE* forwardIp = ip;
             const BYTE* forwardIp2 = ip + 1;
+            size_t forwardPattern = LZ4_read(forwardIp, tableType);
+            size_t forwardPattern2 = LZ4_read(forwardIp2, tableType);
             unsigned step = 1;
             unsigned searchMatchNb = acceleration << LZ4_skipTrigger;
             for ( ; ; ) {
@@ -604,6 +619,8 @@ LZ4_FORCE_INLINE int LZ4_compress_generic(
                 // int bad2;
                 U32 const h = forwardH;
                 U32 const h2 = forwardH2;
+                U32 const pattern = forwardPattern;
+                U32 const pattern2 = forwardPattern2;
                 const BYTE* const ip2 = forwardIp2;
                 ip = forwardIp;
                 forwardIp = forwardIp2 + step;
@@ -632,29 +649,24 @@ LZ4_FORCE_INLINE int LZ4_compress_generic(
                         lowLimit2 = (const BYTE*)source;
                     }
                 }
-                forwardH = LZ4_hashPosition(forwardIp, tableType);
-                forwardH2 = LZ4_hashPosition(forwardIp2, tableType);
+                forwardPattern = LZ4_read(forwardIp, tableType);
+                forwardPattern2 = LZ4_read(forwardIp2, tableType);
+                forwardH = LZ4_hash(forwardPattern, tableType);
+                forwardH2 = LZ4_hash(forwardPattern2, tableType);
 
-#define match_bad(mMatch, mRefDelta, mIp) \
-  ((unlikely((dictIssue==dictSmall) ? ((mMatch) < lowRefLimit) : 0) \
- |  unlikely((tableType==byU16) ? 0 : ((mMatch) + MAX_DISTANCE < (mIp)))) \
- || ((LZ4_read32((mMatch)+(mRefDelta)) != LZ4_read32((mIp)))))
+#define match_invalid(mMatch, mIp) \
+  (unlikely((dictIssue==dictSmall) ? ((mMatch) < lowRefLimit) : 0) \
+ |  unlikely((tableType==byU16) ? 0 : ((mMatch) + MAX_DISTANCE < (mIp))))
+#define match_bad(mInvalid, mMatch, mRefDelta, mIp, mPattern) \
+ ((mInvalid) || ((LZ4_read32((mMatch)+(mRefDelta)) != (mPattern))))
 
-                // bad2  = (dictIssue == dictSmall ? match2 < lowRefLimit : 0);
-                // bad2 |= (tableType==byU16 ? 0 : match2 + MAX_DISTANCE < ip2);
-                // bad2  = bad2 || LZ4_read32(match2 + refDelta2) != LZ4_read32(ip2);
-                // bad1  = (dictIssue == dictSmall ? match < lowRefLimit : 0);
-                // bad1 |= (tableType==byU16 ? 0 : match + MAX_DISTANCE < ip);
-                // bad1  = bad1 || LZ4_read32(match + refDelta) != LZ4_read32(ip);
-                // if (!bad1)
-                int const good1 = !match_bad(match, refDelta, ip);
+                int const invalid = match_invalid(match, ip);
                 LZ4_putPositionOnHash(ip, h, cctx->hashTable, tableType, base);
-                if (good1)
+                if (!match_bad(invalid, match, refDelta, ip, pattern))
                   break;
-                int const good2 = !match_bad(match2, refDelta2, ip2);
+                int const invalid2 = match_invalid(match2, ip2);
                 LZ4_putPositionOnHash(ip2, h2, cctx->hashTable, tableType, base);
-                // if (!bad2) {
-                if (good2) {
+                if (!match_bad(invalid2, match2, refDelta2, ip2, pattern2)) {
                   match = match2;
                   refDelta = refDelta2;
                   lowLimit = lowLimit2;
