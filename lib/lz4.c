@@ -526,7 +526,6 @@ LZ4_FORCE_INLINE const BYTE* LZ4_getPosition(const BYTE* p, void* tableBase, tab
     return LZ4_getPositionOnHash(h, tableBase, tableType, srcBase);
 }
 
-
 /** LZ4_compress_generic() :
     inlined, to ensure branches are decided at compilation time */
 LZ4_FORCE_INLINE int LZ4_compress_generic(
@@ -719,6 +718,11 @@ LZ4_FORCE_INLINE int LZ4_compress_generic(
             } else
                 *token += (BYTE)(matchCode);
         }
+#else
+        {
+            unsigned const matchCode = LZ4_count(ip+MINMATCH, match+MINMATCH, matchlimit);
+            ip += MINMATCH + matchCode;
+        }
 #endif
         anchor = ip;
 
@@ -751,9 +755,11 @@ _last_literals:
         memcpy(op, anchor, lastRun);
         op += lastRun;
     }
-#endif
     /* End */
     return (int) (((char*)op)-dest);
+#else
+    return (int)((char*)op - dest) + 5;
+#endif
 }
 
 
