@@ -600,6 +600,8 @@ LZ4_FORCE_INLINE int LZ4_compress_generic(
             unsigned step = 1;
             unsigned searchMatchNb = acceleration << LZ4_skipTrigger;
             for ( ; ; ) {
+                // int bad1;
+                // int bad2;
                 U32 const h = forwardH;
                 U32 const h2 = forwardH2;
                 const BYTE* const ip2 = forwardIp2;
@@ -613,6 +615,7 @@ LZ4_FORCE_INLINE int LZ4_compress_generic(
 
                 match = LZ4_getPositionOnHash(h, cctx->hashTable, tableType, base);
                 match2 = LZ4_getPositionOnHash(h2, cctx->hashTable, tableType, base);
+
                 if (dict==usingExtDict) {
                     if (match < (const BYTE*)source) {
                         refDelta = dictDelta;
@@ -633,30 +636,31 @@ LZ4_FORCE_INLINE int LZ4_compress_generic(
                 forwardH2 = LZ4_hashPosition(forwardIp2, tableType);
 
 #define match_bad(mMatch, mRefDelta, mIp) \
-  ( ((dictIssue==dictSmall) ? ((mMatch) < lowRefLimit) : 0) \
- || ((tableType==byU16) ? 0 : ((mMatch) + MAX_DISTANCE < (mIp))) \
+  ((unlikely((dictIssue==dictSmall) ? ((mMatch) < lowRefLimit) : 0) \
+ |  unlikely((tableType==byU16) ? 0 : ((mMatch) + MAX_DISTANCE < (mIp)))) \
  || ((LZ4_read32((mMatch)+(mRefDelta)) != LZ4_read32((mIp)))))
 
+                // bad2  = (dictIssue == dictSmall ? match2 < lowRefLimit : 0);
+                // bad2 |= (tableType==byU16 ? 0 : match2 + MAX_DISTANCE < ip2);
+                // bad2  = bad2 || LZ4_read32(match2 + refDelta2) != LZ4_read32(ip2);
+                // bad1  = (dictIssue == dictSmall ? match < lowRefLimit : 0);
+                // bad1 |= (tableType==byU16 ? 0 : match + MAX_DISTANCE < ip);
+                // bad1  = bad1 || LZ4_read32(match + refDelta) != LZ4_read32(ip);
+                // if (!bad1)
+                int const good1 = !match_bad(match, refDelta, ip);
                 LZ4_putPositionOnHash(ip, h, cctx->hashTable, tableType, base);
-                if (!match_bad(match, refDelta, ip))
+                if (good1)
                   break;
+                int const good2 = !match_bad(match2, refDelta2, ip2);
                 LZ4_putPositionOnHash(ip2, h2, cctx->hashTable, tableType, base);
-                if (!match_bad(match2, refDelta2, ip2)) {
+                // if (!bad2) {
+                if (good2) {
                   match = match2;
                   refDelta = refDelta2;
                   lowLimit = lowLimit2;
                   ip = ip2;
                   break;
                 }
-#if 0 /* Check the most recent position */
-                if (!match_bad(ip, 0, ip2)) {
-                  match = ip;
-                  refDelta = 0;
-                  lowLimit = (const BYTE*)source;
-                  ip = ip2;
-                  break;
-                }
-#endif
             }
         }
 
