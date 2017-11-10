@@ -656,6 +656,7 @@ LZ4_FORCE_INLINE int LZ4_compress_generic(
             }
         }
 
+#ifdef WHOLE
         /* Catch up */
         while (((ip>anchor) & (match+refDelta > lowLimit)) && (unlikely(ip[-1]==match[refDelta-1]))) { ip--; match--; }
 
@@ -718,7 +719,7 @@ LZ4_FORCE_INLINE int LZ4_compress_generic(
             } else
                 *token += (BYTE)(matchCode);
         }
-
+#endif
         anchor = ip;
 
         /* Test end of chunk */
@@ -733,6 +734,7 @@ LZ4_FORCE_INLINE int LZ4_compress_generic(
     }
 
 _last_literals:
+#ifdef WHOLE
     /* Encode Last Literals */
     {   size_t const lastRun = (size_t)(iend - anchor);
         if ( (outputLimited) &&  /* Check output buffer overflow */
@@ -749,7 +751,7 @@ _last_literals:
         memcpy(op, anchor, lastRun);
         op += lastRun;
     }
-
+#endif
     /* End */
     return (int) (((char*)op)-dest);
 }
