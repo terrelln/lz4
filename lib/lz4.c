@@ -526,6 +526,17 @@ LZ4_FORCE_INLINE const BYTE* LZ4_getPosition(const BYTE* p, void* tableBase, tab
     return LZ4_getPositionOnHash(h, tableBase, tableType, srcBase);
 }
 
+#define LZ4_FORCE_NOINLINE static __attribute__((__noinline__))
+
+LZ4_FORCE_NOINLINE ptrdiff_t LZ4_encodeRun(int len, BYTE* op)
+{
+    BYTE* const ostart = op;
+    do { *op++ = 255; len -= 255; } while (len >= 255);
+    *op++ = (BYTE)len;
+    return op - ostart;
+}
+
+
 /** LZ4_compress_generic() :
     inlined, to ensure branches are decided at compilation time */
 LZ4_FORCE_INLINE int LZ4_compress_generic(
@@ -655,7 +666,6 @@ LZ4_FORCE_INLINE int LZ4_compress_generic(
             }
         }
 
-#ifdef WHOLE
         /* Catch up */
         while (((ip>anchor) & (match+refDelta > lowLimit)) && (unlikely(ip[-1]==match[refDelta-1]))) { ip--; match--; }
 
@@ -668,8 +678,8 @@ LZ4_FORCE_INLINE int LZ4_compress_generic(
             if (litLength >= RUN_MASK) {
                 int len = (int)litLength-RUN_MASK;
                 *token = (RUN_MASK<<ML_BITS);
-                for(; len >= 255 ; len-=255) *op++ = 255;
-                *op++ = (BYTE)len;
+                if (len >= 255) op += LZ4_encodeRun(len, op);
+                else *op++ = (BYTE)len;
             }
             else *token = (BYTE)(litLength<<ML_BITS);
 
@@ -677,6 +687,7 @@ LZ4_FORCE_INLINE int LZ4_compress_generic(
             LZ4_wildCopy(op, anchor, op+litLength);
             op+=litLength;
         }
+#ifdef WHOLE
 
         /* Encode Offset */
         LZ4_writeLE16(op, (U16)(ip-match)); op+=2;
