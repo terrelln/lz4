@@ -696,21 +696,34 @@ LZ4_FORCE_INLINE int LZ4_compress_generic(
         /* Encode MatchLength */
         {   unsigned matchCode;
 
+            // if ((dict==usingExtDict) && (lowLimit==dictionary)) {
+            //     const BYTE* limit;
+            //     match += refDelta;
+            //     limit = ip + (dictEnd-match);
+            //     if (limit > matchlimit) limit = matchlimit;
+            //     matchCode = LZ4_count(ip+MINMATCH, match+MINMATCH, limit);
+            //     ip += MINMATCH + matchCode;
+            //     if (ip==limit) {
+            //         unsigned const more = LZ4_count(ip, (const BYTE*)source, matchlimit);
+            //         matchCode += more;
+            //         ip += more;
+            //     }
+            // } else {
+            //     matchCode = LZ4_count(ip+MINMATCH, match+MINMATCH, matchlimit);
+            //     ip += MINMATCH + matchCode;
+            // }
+            const BYTE* limit = matchlimit;
             if ((dict==usingExtDict) && (lowLimit==dictionary)) {
-                const BYTE* limit;
+                const BYTE* const dictLimit = ip + (dictEnd - match);
                 match += refDelta;
-                limit = ip + (dictEnd-match);
-                if (limit > matchlimit) limit = matchlimit;
-                matchCode = LZ4_count(ip+MINMATCH, match+MINMATCH, limit);
-                ip += MINMATCH + matchCode;
-                if (ip==limit) {
-                    unsigned const more = LZ4_count(ip, (const BYTE*)source, matchlimit);
-                    matchCode += more;
-                    ip += more;
-                }
-            } else {
-                matchCode = LZ4_count(ip+MINMATCH, match+MINMATCH, matchlimit);
-                ip += MINMATCH + matchCode;
+                if (dictLimit < limit) limit = dictLimit;
+            }
+            matchCode = LZ4_count(ip + MINMATCH, match + MINMATCH, limit);
+            ip += MINMATCH + matchCode;
+            if (dict==usingExtDict && lowLimit == dictionary && ip == limit) {
+                unsigned const more = LZ4_count(ip, (const BYTE*)source, matchlimit);
+                matchCode += more;
+                ip += more;
             }
 
             if ( outputLimited &&    /* Check output buffer overflow */
