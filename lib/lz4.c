@@ -528,12 +528,11 @@ LZ4_FORCE_INLINE const BYTE* LZ4_getPosition(const BYTE* p, void* tableBase, tab
 
 #define LZ4_FORCE_NOINLINE static __attribute__((__noinline__))
 
-LZ4_FORCE_NOINLINE ptrdiff_t LZ4_encodeRun(int len, BYTE* op)
+LZ4_FORCE_NOINLINE __attribute__((optimize("no-tree-vectorize"))) BYTE* LZ4_encodeRun(int len, BYTE* op)
 {
-    BYTE* const ostart = op;
     do { *op++ = 255; len -= 255; } while (len >= 255);
     *op++ = (BYTE)len;
-    return op - ostart;
+    return op;
 }
 
 
@@ -678,7 +677,9 @@ LZ4_FORCE_INLINE int LZ4_compress_generic(
             if (litLength >= RUN_MASK) {
                 int len = (int)litLength-RUN_MASK;
                 *token = (RUN_MASK<<ML_BITS);
-                if (len >= 255) op += LZ4_encodeRun(len, op);
+                // for (; len >= 255; len -= 255) *op++ = 255;
+                // *op++ = (BYTE)len;
+                if (len >= 255) op = LZ4_encodeRun(len, op);
                 else *op++ = (BYTE)len;
             }
             else *token = (BYTE)(litLength<<ML_BITS);
@@ -687,7 +688,7 @@ LZ4_FORCE_INLINE int LZ4_compress_generic(
             LZ4_wildCopy(op, anchor, op+litLength);
             op+=litLength;
         }
-#ifdef WHOLE
+#ifndef PARTIAL
 
         /* Encode Offset */
         LZ4_writeLE16(op, (U16)(ip-match)); op+=2;
@@ -718,14 +719,8 @@ LZ4_FORCE_INLINE int LZ4_compress_generic(
             if (matchCode >= ML_MASK) {
                 *token += ML_MASK;
                 matchCode -= ML_MASK;
-                LZ4_write32(op, 0xFFFFFFFF);
-                while (matchCode >= 4*255) {
-                    op+=4;
-                    LZ4_write32(op, 0xFFFFFFFF);
-                    matchCode -= 4*255;
-                }
-                op += matchCode / 255;
-                *op++ = (BYTE)(matchCode % 255);
+                if (matchCode >= 255) op = LZ4_encodeRun(matchCode, op);
+                else *op++ = (BYTE)matchCode;
             } else
                 *token += (BYTE)(matchCode);
         }
@@ -749,7 +744,7 @@ LZ4_FORCE_INLINE int LZ4_compress_generic(
     }
 
 _last_literals:
-#ifdef WHOLE
+#ifndef PARTIAL
     /* Encode Last Literals */
     {   size_t const lastRun = (size_t)(iend - anchor);
         if ( (outputLimited) &&  /* Check output buffer overflow */
