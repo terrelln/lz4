@@ -593,7 +593,7 @@ LZ4_FORCE_INLINE int LZ4_compress_generic(
         {   const BYTE* forwardIp = ip;
             unsigned step = 1;
             unsigned searchMatchNb = acceleration << LZ4_skipTrigger;
-            do {
+            for ( ; ; ) {
                 U32 const h = forwardH;
                 ip = forwardIp;
                 forwardIp += step;
@@ -610,16 +610,18 @@ LZ4_FORCE_INLINE int LZ4_compress_generic(
                         refDelta = 0;
                         lowLimit = (const BYTE*)source;
                 }   }
-                forwardH = LZ4_hashPosition(forwardIp, tableType);
+
 #define match_bad(mMatch, mRefDelta, mIp) \
   ((unlikely((dictIssue==dictSmall) ? ((mMatch) < lowRefLimit) : 0) \
  |  unlikely((tableType==byU16) ? 0 : ((mMatch) + MAX_DISTANCE < (mIp)))) \
  || ((LZ4_read32((mMatch)+(mRefDelta)) != LZ4_read32((mIp)))))
+
+                forwardH = LZ4_hashPosition(forwardIp, tableType);
                 int const good = !match_bad(match, refDelta, ip);
                 LZ4_putPositionOnHash(ip, h, cctx->hashTable, tableType, base);
-
-                if (good) break;
-            } while (1);
+                if (good)
+                    break;
+            }
         }
 
         /* Catch up */
