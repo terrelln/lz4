@@ -528,7 +528,7 @@ LZ4_FORCE_INLINE const BYTE* LZ4_getPosition(const BYTE* p, void* tableBase, tab
 
 #define LZ4_FORCE_NOINLINE static __attribute__((__noinline__))
 
-LZ4_FORCE_NOINLINE __attribute__((optimize("no-tree-vectorize"))) BYTE* LZ4_encodeRun(int len, BYTE* op)
+LZ4_FORCE_NOINLINE BYTE* LZ4_encodeRun(int len, BYTE* op)
 {
     do { *op++ = 255; len -= 255; } while (len >= 255);
     *op++ = (BYTE)len;
