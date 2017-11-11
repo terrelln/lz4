@@ -609,8 +609,6 @@ LZ4_FORCE_INLINE int LZ4_compress_generic(
             unsigned step = 1;
             unsigned searchMatchNb = acceleration << LZ4_skipTrigger;
             for ( ; ; ) {
-                // int bad1;
-                // int bad2;
                 U32 const h = forwardH;
                 U32 const h2 = forwardH2;
                 const BYTE* const ip2 = forwardIp2;
@@ -665,6 +663,7 @@ LZ4_FORCE_INLINE int LZ4_compress_generic(
             }
         }
 
+#ifndef PARTIAL
         /* Catch up */
         while (((ip>anchor) & (match+refDelta > lowLimit)) && (unlikely(ip[-1]==match[refDelta-1]))) { ip--; match--; }
 
@@ -688,7 +687,6 @@ LZ4_FORCE_INLINE int LZ4_compress_generic(
             LZ4_wildCopy(op, anchor, op+litLength);
             op+=litLength;
         }
-#ifndef PARTIAL
 
         /* Encode Offset */
         LZ4_writeLE16(op, (U16)(ip-match)); op+=2;
@@ -696,34 +694,21 @@ LZ4_FORCE_INLINE int LZ4_compress_generic(
         /* Encode MatchLength */
         {   unsigned matchCode;
 
-            // if ((dict==usingExtDict) && (lowLimit==dictionary)) {
-            //     const BYTE* limit;
-            //     match += refDelta;
-            //     limit = ip + (dictEnd-match);
-            //     if (limit > matchlimit) limit = matchlimit;
-            //     matchCode = LZ4_count(ip+MINMATCH, match+MINMATCH, limit);
-            //     ip += MINMATCH + matchCode;
-            //     if (ip==limit) {
-            //         unsigned const more = LZ4_count(ip, (const BYTE*)source, matchlimit);
-            //         matchCode += more;
-            //         ip += more;
-            //     }
-            // } else {
-            //     matchCode = LZ4_count(ip+MINMATCH, match+MINMATCH, matchlimit);
-            //     ip += MINMATCH + matchCode;
-            // }
-            const BYTE* limit = matchlimit;
             if ((dict==usingExtDict) && (lowLimit==dictionary)) {
-                const BYTE* const dictLimit = ip + (dictEnd - match);
+                const BYTE* limit;
                 match += refDelta;
-                if (dictLimit < limit) limit = dictLimit;
-            }
-            matchCode = LZ4_count(ip + MINMATCH, match + MINMATCH, limit);
-            ip += MINMATCH + matchCode;
-            if (dict==usingExtDict && lowLimit == dictionary && ip == limit) {
-                unsigned const more = LZ4_count(ip, (const BYTE*)source, matchlimit);
-                matchCode += more;
-                ip += more;
+                limit = ip + (dictEnd-match);
+                if (limit > matchlimit) limit = matchlimit;
+                matchCode = LZ4_count(ip+MINMATCH, match+MINMATCH, limit);
+                ip += MINMATCH + matchCode;
+                if (ip==limit) {
+                    unsigned const more = LZ4_count(ip, (const BYTE*)source, matchlimit);
+                    matchCode += more;
+                    ip += more;
+                }
+            } else {
+                matchCode = LZ4_count(ip+MINMATCH, match+MINMATCH, matchlimit);
+                ip += MINMATCH + matchCode;
             }
 
             if ( outputLimited &&    /* Check output buffer overflow */
