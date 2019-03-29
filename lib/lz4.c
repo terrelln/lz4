@@ -849,8 +849,9 @@ LZ4_FORCE_INLINE int LZ4_compress_generic(
             do {
                 U32 const h = forwardH;
                 U32 const current = (U32)(forwardIp - base);
-                U32 matchIndex = LZ4_getIndexOnHash(h, cctx->hashTable, tableType);
+                U32 matchIndex = current - ((current - LZ4_getIndexOnHash(h, cctx->hashTable, tableType)) & MAX_DISTANCE);
                 assert(matchIndex <= current);
+                assert(current - matchIndex <= MAX_DISTANCE);
                 assert(forwardIp - base < (ptrdiff_t)(2 GB - 1));
                 ip = forwardIp;
                 forwardIp += step;
@@ -863,7 +864,8 @@ LZ4_FORCE_INLINE int LZ4_compress_generic(
                     if (matchIndex < startIndex) {
                         /* there was no match, try the dictionary */
                         assert(tableType == byU32);
-                        matchIndex = LZ4_getIndexOnHash(h, dictCtx->hashTable, byU32);
+                        matchIndex = current - ((current - LZ4_getIndexOnHash(h, cctx->hashTable, byU32)) & MAX_DISTANCE);
+                        assert(current - matchIndex <= MAX_DISTANCE);
                         match = dictBase + matchIndex;
                         matchIndex += dictDelta;   /* make dictCtx index comparable with current context */
                         lowLimit = dictionary;
@@ -888,11 +890,12 @@ LZ4_FORCE_INLINE int LZ4_compress_generic(
                 LZ4_putIndexOnHash(current, h, cctx->hashTable, tableType);
 
                 if ((dictIssue == dictSmall) && (matchIndex < prefixIdxLimit)) continue;    /* match outside of valid area */
-                assert(matchIndex < current);
-                if ((tableType != byU16) && (matchIndex+MAX_DISTANCE < current)) continue;  /* too far */
-                if (tableType == byU16) assert((current - matchIndex) <= MAX_DISTANCE);     /* too_far presumed impossible with byU16 */
+                assert(matchIndex <= current);
+                assert(matchIndex+MAX_DISTANCE>=current);
+                assert((current - matchIndex) <= MAX_DISTANCE);     /* too_far presumed impossible with byU16 */
 
                 if (LZ4_read32(match) == LZ4_read32(ip)) {
+                    if ((tableType != byU16) && (matchIndex == current)) continue;
                     if (maybe_extMem) offset = current - matchIndex;
                     break;   /* match found */
                 }
@@ -1026,7 +1029,7 @@ _next_match:
 
             U32 const h = LZ4_hashPosition(ip, tableType);
             U32 const current = (U32)(ip-base);
-            U32 matchIndex = LZ4_getIndexOnHash(h, cctx->hashTable, tableType);
+            U32 matchIndex = current - ((current - LZ4_getIndexOnHash(h, cctx->hashTable, tableType)) & MAX_DISTANCE);
             assert(matchIndex < current);
             if (dictDirective == usingDictCtx) {
                 if (matchIndex < startIndex) {
@@ -1051,10 +1054,10 @@ _next_match:
                 match = base + matchIndex;
             }
             LZ4_putIndexOnHash(current, h, cctx->hashTable, tableType);
-            assert(matchIndex < current);
+            assert(matchIndex <= current);
             if ( ((dictIssue==dictSmall) ? (matchIndex >= prefixIdxLimit) : 1)
-              && ((tableType==byU16) ? 1 : (matchIndex+MAX_DISTANCE >= current))
-              && (LZ4_read32(match) == LZ4_read32(ip)) ) {
+              && (LZ4_read32(match) == LZ4_read32(ip))
+              && ((tableType==byU16) ? 1 : (matchIndex != current))) {
                 token=op++;
                 *token=0;
                 if (maybe_extMem) offset = current - matchIndex;
